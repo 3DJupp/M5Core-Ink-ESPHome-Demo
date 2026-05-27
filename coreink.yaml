@@ -1,0 +1,649 @@
+substitutions:
+  name: "coreink_dev"
+  hostname: "coreink-dev"
+  friendly_name: "CoreInk Dev"
+  manufacturer: M5 Stack
+  model: CoreInk
+  encryption_key: "xxx"            # Replace with: esphome generate-encryption-key
+  ota_encryption_key: "xxx"        # Replace with your OTA password
+  ap_fallback_pw: "xxx"            # Fallback AP password when WiFi is unavailable
+
+  # --- Hardware pin assignments ---
+  coreink_buzzer_pin: GPIO2
+  coreink_led_pin: GPIO10
+  coreink_battery_pin: GPIO35
+  coreink_pwr_mos_pin: GPIO12      # Power-hold MOSFET (keep HIGH to stay on)
+
+  coreink_btn:
+    stick:
+      up:
+        number: GPIO37
+        other_uses: false
+      press:
+        number: GPIO38
+        other_uses: false
+      down:
+        number: GPIO39
+        other_uses: true            # Shared with ADC — handle with care
+    # GPIO5 is pulled up at boot (strapping pin) — treat as input-only
+    top:
+      number: GPIO5
+      other_uses: false
+    side:
+      number: GPIO27
+      other_uses: false
+
+  # --- Timezone (POSIX string) ---
+  # See: https://github.com/esphome/esphome/issues/10913#issuecomment-3484883778
+  time_timezone: "Europe/Berlin"
+
+  # --- E-paper display ---
+  # Two hardware variants exist; select the one matching your unit:
+  #   1.54in-m5coreink-m09  →  busy.inverted: true
+  #   1.54inv2              →  busy.inverted: false  (default below)
+  epaper:
+    type: 1.54inv2
+    update_interval: 60s
+    rotation: 0
+    cs: GPIO9
+    dc: GPIO15
+    busy:
+      pin: GPIO4
+      inverted: false
+    reset: GPIO0
+    full_update_every: 1
+
+
+# --- Board & framework ---
+# Reference: https://github.com/simenopsahl/esphome/blob/main/board/pins/m5stack_coreink.yaml
+esphome:
+  name: ${hostname}
+  comment: "AQI monitor with BME688 on ${manufacturer} ${model}"
+  name_add_mac_suffix: false
+  platformio_options:
+    upload_speed: 1500000
+  libraries:
+    - FS
+    - SPI
+    - Wire
+  on_boot:
+    # Priority 800 — sync RTC before anything else needs the time
+    - priority: 800
+      then:
+        - pcf8563.read_time
+
+    # Priority 600 — assert power-hold so the device stays on after boot
+    - priority: 600
+      then:
+        - lambda: |-
+            pinMode(12 /* POWER_HOLD_PIN */, OUTPUT);
+            digitalWrite(12, HIGH);
+
+    # Priority 500 — active-HIGH disables the external LED on startup
+    - priority: 500
+      then:
+        - lambda: |-
+            pinMode(10 /* LED_EXT_PIN */, OUTPUT);
+            digitalWrite(10, HIGH);
+
+esp32:
+  board: m5stack-coreink
+  framework:
+    type: arduino
+
+logger:
+  level: VERBOSE
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: ${ap_fallback_pw}
+
+captive_portal:
+
+# --- Home Assistant API ---
+api:
+  encryption:
+    key: ${encryption_key}
+  services:
+    # Play any RTTTL melody string from an HA automation / script
+    - service: play_rtttl
+      variables:
+        song_str: string
+      then:
+        - rtttl.play:
+            rtttl: !lambda 'return song_str;'
+
+    - service: play_missionimp
+      then:
+        - script.execute: play_mission_impossible
+
+    - service: play_twoshortbeeps
+      then:
+        - script.execute: play_two_short_beeps
+
+    - service: play_threeshortbeeps
+      then:
+        - script.execute: play_three_short_beeps
+
+    - service: play_fourshortbeeps
+      then:
+        - script.execute: play_four_short_beeps
+
+    - service: play_fiveshortbeeps
+      then:
+        - script.execute: play_five_short_beeps
+
+    - service: play_sixshortbeeps
+      then:
+        - script.execute: play_six_short_beeps
+
+# --- RTTTL melody scripts ---
+script:
+  - id: play_mission_impossible
+    then:
+      - rtttl.play: 'MissionImp:d=16,o=6,b=95:32d,32d#,32d,32d#,32d,32d#,32d,32d#,32d,32d,32d#,32e,32f,32f#,32g,g,8p,g,8p,a#,p,c7,p,g,8p,g,8p,f,p,f#,p,g,8p,g,8p,a#,p,c7,p,g,8p,g,8p,f,p,f#,p,a#,g,2d,32p,a#,g,2c#,32p,a#,g,2c,a#5,8c,2p,32p,a#5,g5,2f#,32p,a#5,g5,2f,32p,a#5,g5,2e,d#,8d'
+
+  - id: play_two_short_beeps
+    then:
+      - rtttl.play: 'twoshort:d=4,o=5,b=100:16e6,16e6'
+
+  - id: play_three_short_beeps
+    then:
+      - rtttl.play: 'threeshort:d=4,o=5,b=100:16e6,16e6,16e6'
+
+  - id: play_four_short_beeps
+    then:
+      - rtttl.play: 'fourshort:d=4,o=5,b=100:16e6,16e6,16e6,16e6'
+
+  - id: play_five_short_beeps
+    then:
+      - rtttl.play: 'fiveshort:d=4,o=5,b=100:16e6,16e6,16e6,16e6,16e6'
+
+  - id: play_six_short_beeps
+    then:
+      - rtttl.play: 'sixshort:d=4,o=5,b=100:16e6,16e6,16e6,16e6,16e6,16e6'
+
+ota:
+  - platform: esphome
+    password: ${ota_encryption_key}
+
+web_server:
+
+# ---------------------------------------------------
+# I2C buses
+# ---------------------------------------------------
+i2c:
+  # Internal bus: RTC (PCF8563 @ 0x51)
+  - id: bus_int
+    sda: 21
+    scl: 22
+  # Port-A Grove connector: BME688 ENV Pro @ 0x77
+  - id: port_a
+    sda: 32
+    scl: 33
+
+# ---------------------------------------------------
+# SPI bus (shared by e-paper display)
+# ---------------------------------------------------
+spi:
+  clk_pin: 18
+  mosi_pin: 23
+  miso_pin: 34
+
+# ---------------------------------------------------
+# BME688 air-quality sensor (BSEC2 library)
+# ---------------------------------------------------
+bme68x_bsec2_i2c:
+  id: bme688_sensor_1
+  address: 0x77
+  i2c_id: port_a
+  model: bme688
+  operating_age: 4d
+  # LP mode: temperature reads ~2–6 °C above ambient due to self-heating
+  sample_rate: LP
+  supply_voltage: 3.3V
+
+# ---------------------------------------------------
+# Sensors
+# ---------------------------------------------------
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: ${name}_wifi_rssi
+    update_interval: 30s
+    entity_category: diagnostic
+
+  - platform: bme68x_bsec2
+    bme68x_bsec2_id: bme688_sensor_1
+    temperature:
+      name: "Temperature"
+      id: ${name}_bme_temp
+      accuracy_decimals: 1
+    pressure:
+      name: "Pressure"
+      id: ${name}_bme_press
+      unit_of_measurement: "hPa"
+      accuracy_decimals: 1
+    humidity:
+      name: "Humidity"
+      id: ${name}_bme_hum
+      accuracy_decimals: 1
+    gas_resistance:
+      name: "Gas Resistance"
+      id: ${name}_bme_gas
+      unit_of_measurement: "Ω"
+      icon: mdi:resistor
+      entity_category: diagnostic
+      disabled_by_default: true
+    co2_equivalent:
+      name: "CO2 Equivalent"
+      id: ${name}_co2_equ
+      disabled_by_default: true
+    breath_voc_equivalent:
+      name: "VOC Equivalent"
+      id: ${name}_voc_equ
+      disabled_by_default: true
+
+  # Composite IAQ index: log(gas_resistance) + 0.04 * humidity
+  - platform: template
+    name: "BME688 IAQ"
+    id: ${name}_iaq
+    icon: "mdi:gauge"
+    lambda: |-
+      return log(id(${name}_bme_gas).state) + 0.04 * id(${name}_bme_hum).state;
+    state_class: "measurement"
+    entity_category: diagnostic
+    disabled_by_default: true
+
+  # Raw wakeup-cause code (useful after deep-sleep wakeup)
+  - platform: template
+    name: "Wakeup Cause"
+    id: ${name}_wakeup_cause
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    internal: true
+    lambda: return esp_sleep_get_wakeup_cause();
+
+  # ADC raw voltage for the battery (GPIO35, 1:4.25 voltage divider)
+  - platform: adc
+    pin: ${coreink_battery_pin}
+    id: ${name}_bat_adc
+    update_interval: 2s
+    samples: 10
+    accuracy_decimals: 3
+    filters:
+      - multiply: 4.25
+      - median:
+          window_size: 7
+          send_every: 7
+          send_first_at: 7
+    name: "Battery Voltage"
+    entity_category: diagnostic
+    device_class: voltage
+    unit_of_measurement: V
+    on_value:
+      then:
+        - component.update: ${name}_bat_pct
+
+  # Battery percentage derived from the voltage reading via piecewise calibration
+  - platform: template
+    name: "Battery Percent"
+    id: ${name}_bat_pct
+    lambda: return id(${name}_bat_adc).state;
+    accuracy_decimals: 0
+    filters:
+      - calibrate_linear:
+          method: exact
+          datapoints:
+            - 0.00  -> 0.0
+            - 3.00  -> 1.0
+            - 3.10  -> 10.0
+            - 3.20  -> 50.0
+            - 3.55  -> 85.0
+            - 3.685 -> 100.0
+      - lambda: |-
+          if (x < 0)   return 0.0f;
+          if (x > 100) return 100.0f;
+          return x;
+    entity_category: diagnostic
+    device_class: battery
+    unit_of_measurement: "%"
+
+# ---------------------------------------------------
+# Fonts  (place segoeuithibd.ttf in the fonts/ folder)
+# ---------------------------------------------------
+font:
+  - file: 'fonts/segoeuithibd.ttf'
+    id: font_xs
+    size: 11
+  - file: 'fonts/segoeuithibd.ttf'
+    id: font_sm
+    size: 13
+  - file: 'fonts/segoeuithibd.ttf'
+    id: font_md
+    size: 18
+  - file: 'fonts/segoeuithibd.ttf'
+    id: font_l
+    size: 30
+  - file: 'fonts/segoeuithibd.ttf'
+    id: font_xl
+    size: 44
+
+# ---------------------------------------------------
+# E-paper display (Waveshare 1.54" b/w)
+# ---------------------------------------------------
+display:
+  - platform: waveshare_epaper
+    id: ${name}_display
+    model: ${epaper.type}
+    update_interval: ${epaper.update_interval}
+    rotation: ${epaper.rotation}
+    cs_pin: ${epaper.cs}
+    dc_pin: ${epaper.dc}
+    reset_pin: ${epaper.reset}
+    busy_pin:
+      number: ${epaper.busy.pin}
+      inverted: ${epaper.busy.inverted}
+    full_update_every: ${epaper.full_update_every}
+    lambda: |-
+      // ── Status bar (rows 0–21, inverted colours) ────────────────────────
+      it.filled_rectangle(0, 0, 200, 22, COLOR_ON);
+
+      // WiFi signal bars — bottom-aligned at y=18, filled = active tier
+      int bars = 0;
+      if (!isnan(id(${name}_wifi_rssi).state)) {
+        float rssi = id(${name}_wifi_rssi).state;
+        if      (rssi >= -55) bars = 4;
+        else if (rssi >= -65) bars = 3;
+        else if (rssi >= -75) bars = 2;
+        else if (rssi >= -85) bars = 1;
+      }
+      if (bars >= 1) it.filled_rectangle(4,  14, 3, 4,  COLOR_OFF);
+      else           it.rectangle(       4,  14, 3, 4,  COLOR_OFF);
+      if (bars >= 2) it.filled_rectangle(9,  11, 3, 7,  COLOR_OFF);
+      else           it.rectangle(       9,  11, 3, 7,  COLOR_OFF);
+      if (bars >= 3) it.filled_rectangle(14,  8, 3, 10, COLOR_OFF);
+      else           it.rectangle(       14,  8, 3, 10, COLOR_OFF);
+      if (bars >= 4) it.filled_rectangle(19,  5, 3, 13, COLOR_OFF);
+      else           it.rectangle(       19,  5, 3, 13, COLOR_OFF);
+
+      // Device name centred in the status bar
+      it.printf(95, 11, id(font_sm), COLOR_OFF, TextAlign::CENTER, "CoreInk");
+
+      // Battery indicator (outline box + plus-pole nub + percentage number)
+      int batt = 0;
+      if (!isnan(id(${name}_bat_pct).state)) {
+        batt = (int)id(${name}_bat_pct).state;
+        batt = std::max(0, std::min(100, batt));
+      }
+      const int bx = 164, by = 4, bw = 28, bh = 14;
+      it.rectangle(bx, by, bw, bh, COLOR_OFF);
+      it.filled_rectangle(bx + bw, by + 4, 3, 6, COLOR_OFF); // plus pole
+      it.printf(bx + bw / 2, by + bh / 2, id(font_xs), COLOR_OFF,
+                TextAlign::CENTER, "%d", batt);
+
+      // ── Clock + date ────────────────────────────────────────────────────
+      // Prefer SNTP; fall back to RTC if network time is not yet available
+      auto t = id(sntp_time).now();
+      if (!t.is_valid()) t = id(rtc_time).now();
+
+      if (t.is_valid()) {
+        it.strftime(100, 28, id(font_xl), TextAlign::TOP_CENTER, "%H:%M", t);
+        it.strftime(100, 82, id(font_sm), TextAlign::TOP_CENTER, "%a %d.%m.%Y", t);
+      } else {
+        it.print(100, 28, id(font_xl), TextAlign::TOP_CENTER, "--:--");
+      }
+
+      // Separator line between clock and sensor readings
+      it.line(15, 108, 185, 108);
+
+      // ── Sensor readings ─────────────────────────────────────────────────
+      it.print(15, 115, id(font_md), "T");
+      if (!isnan(id(${name}_bme_temp).state))
+        it.printf(185, 115, id(font_md), TextAlign::TOP_RIGHT,
+                  "%.1f °C", id(${name}_bme_temp).state);
+      else
+        it.print(185, 115, id(font_md), TextAlign::TOP_RIGHT, "-- °C");
+
+      it.print(15, 140, id(font_md), "H");
+      if (!isnan(id(${name}_bme_hum).state))
+        it.printf(185, 140, id(font_md), TextAlign::TOP_RIGHT,
+                  "%.0f %%", id(${name}_bme_hum).state);
+      else
+        it.print(185, 140, id(font_md), TextAlign::TOP_RIGHT, "-- %");
+
+      it.print(15, 165, id(font_md), "P");
+      if (!isnan(id(${name}_bme_press).state))
+        it.printf(185, 165, id(font_md), TextAlign::TOP_RIGHT,
+                  "%.0f hPa", id(${name}_bme_press).state);
+      else
+        it.print(185, 165, id(font_md), TextAlign::TOP_RIGHT, "-- hPa");
+
+# ---------------------------------------------------
+# Button inputs (rotary encoder knob + side / top buttons)
+# ---------------------------------------------------
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: ${coreink_btn.stick.up.number}
+    name: "Rotary Left"
+    id: ${name}_rotary_left
+    filters:
+      - invert:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    icon: mdi:rotate-right
+    entity_category: "diagnostic"
+    on_click:
+      then:
+        - script.execute: play_two_short_beeps
+
+  - platform: gpio
+    pin:
+      number: ${coreink_btn.stick.press.number}
+    name: "Rotary Center"
+    id: ${name}_rotary_center
+    filters:
+      - invert:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    icon: mdi:knob
+    entity_category: "diagnostic"
+    on_click:
+      then:
+        - script.execute: play_three_short_beeps
+
+  - platform: gpio
+    pin:
+      number: ${coreink_btn.stick.down.number}
+    name: "Rotary Right"
+    id: ${name}_rotary_right
+    filters:
+      - invert:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    icon: mdi:rotate-left
+    entity_category: "diagnostic"
+    on_click:
+      then:
+        - script.execute: play_two_short_beeps
+
+  - platform: gpio
+    pin:
+      number: ${coreink_btn.top.number}
+    name: "Button Top"
+    id: ${name}_button_top
+    filters:
+      - invert:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    icon: mdi:electric-switch
+    entity_category: "diagnostic"
+    on_click:
+      then:
+        - script.execute: play_five_short_beeps
+
+  - platform: gpio
+    pin:
+      number: ${coreink_btn.side.number}
+    name: "Button Side"
+    id: ${name}_button_side
+    filters:
+      - invert:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    icon: mdi:electric-switch
+    entity_category: "diagnostic"
+    on_click:
+      then:
+        - script.execute: play_five_short_beeps
+
+  # Mirror an HA presence sensor so the device knows if anyone is home
+  - platform: homeassistant
+    name: "Someone Home"
+    id: ${name}_someone_home
+    entity_id: binary_sensor.personen_zuhause
+    internal: true
+
+  # Tracks whether the HA API connection is alive
+  - platform: status
+    name: "HA Connection Status"
+    id: ${name}_ha_connected
+    internal: true
+
+# ---------------------------------------------------
+# Outputs / switches
+# ---------------------------------------------------
+switch:
+  # External status LED (active HIGH = off because the LED is inverted)
+  - platform: gpio
+    name: "LED"
+    id: ${name}_led
+    pin:
+      number: ${coreink_led_pin}
+      mode: OUTPUT
+    restore_mode: ALWAYS_OFF
+    entity_category: "config"
+    icon: mdi:led-off
+
+  # Low-level GPIO switch that drives the power-hold MOSFET on GPIO12
+  - platform: gpio
+    id: ${name}_power_hold
+    pin: 12
+    entity_category: "config"
+    inverted: false
+
+  # Template switch that manages GPIO12 deep-sleep hold correctly
+  - platform: template
+    id: sw_pwr_hold
+    name: "Power Hold"
+    lambda: |-
+      return id(${name}_power_hold).state;
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      then:
+        - logger.log: "Power Hold → ON"
+        - lambda: |-
+            gpio_set_direction(GPIO_NUM_12, GPIO_MODE_OUTPUT);
+            gpio_set_level(GPIO_NUM_12, 1);
+            gpio_hold_en(GPIO_NUM_12);
+            gpio_deep_sleep_hold_en();
+    turn_off_action:
+      then:
+        - logger.log: "Power Hold → OFF"
+        - lambda: |-
+            gpio_set_direction(GPIO_NUM_12, GPIO_MODE_OUTPUT);
+            gpio_set_level(GPIO_NUM_12, 0);
+            gpio_hold_en(GPIO_NUM_12);
+            gpio_deep_sleep_hold_dis();
+
+# ---------------------------------------------------
+# Buzzer (LEDC PWM → RTTTL player)
+# ---------------------------------------------------
+output:
+  - platform: ledc
+    pin:
+      number: ${coreink_buzzer_pin}
+      mode: OUTPUT
+    id: rtttl_out
+
+rtttl:
+  output: rtttl_out
+  on_finished_playback:
+    - logger.log: "Melody finished"
+
+# ---------------------------------------------------
+# Text sensors
+# ---------------------------------------------------
+text_sensor:
+  # Human-readable wakeup reason — handy for diagnosing resets
+  - platform: template
+    id: wakeup_cause
+    name: "Wakeup Cause"
+    entity_category: diagnostic
+    disabled_by_default: true
+    lambda: return to_string(esp_sleep_get_wakeup_cause());
+    filters:
+      - lambda: |-
+          const std::map<std::string, std::string> reasons = {
+            {"0",  "0_UNDEFINED"},
+            {"1",  "1_ALL"},
+            {"2",  "2_EXT0"},
+            {"3",  "3_EXT1"},
+            {"4",  "4_TIMER"},
+            {"5",  "5_TOUCHPAD"},
+            {"6",  "6_ULP"},
+            {"7",  "7_GPIO"},
+            {"8",  "8_UART"},
+            {"9",  "9_WIFI"},
+            {"10", "10_COCPU"},
+            {"11", "11_COCPU_TRAP"},
+            {"12", "12_BT"},
+          };
+          auto it = reasons.find(x);
+          return it != reasons.end() ? it->second : x + "_UNKNOWN";
+
+  # Qualitative IAQ label derived from the numeric IAQ index
+  - platform: template
+    name: "BME688 IAQ Text"
+    id: ${name}_iaq_text
+    icon: "mdi:checkbox-marked-circle-outline"
+    lambda: |-
+      int iaq = (int)id(${name}_iaq).state;
+      if      (iaq <= 50)  return {"Excellent"};
+      else if (iaq <= 100) return {"Good"};
+      else if (iaq <= 150) return {"Lightly polluted"};
+      else if (iaq <= 200) return {"Moderately polluted"};
+      else if (iaq <= 250) return {"Heavily polluted"};
+      else if (iaq <= 350) return {"Severely polluted"};
+      else if (iaq <= 500) return {"Extremely polluted"};
+      else                 return {"unknown"};
+
+  - platform: bme68x_bsec2
+    iaq_accuracy:
+      name: "BME688 IAQ Accuracy"
+      id: ${name}_iaq_accuracy
+
+# ---------------------------------------------------
+# Time sources
+# ---------------------------------------------------
+time:
+  # Hardware RTC on the internal I2C bus — survives power cycles
+  - platform: pcf8563
+    id: rtc_time
+    i2c_id: bus_int
+    address: 0x51
+    update_interval: 90min
+
+  # SNTP keeps the RTC disciplined when WiFi is available
+  - platform: sntp
+    id: sntp_time
+    timezone: ${time_timezone}
+    on_time_sync:
+      then:
+        pcf8563.write_time:
