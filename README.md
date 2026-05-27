@@ -48,14 +48,14 @@ attached via the Grove Port-A connector and publishes everything to
 
 ```
 ┌──────────────────────────────┐
-│ ▌▌▌▌  CoreInk       [███ 87]│  ← status bar (inverted)
+│▁▃▆█  CoreInk        [87 ]▌  │  ← status bar (inverted)
 │                              │
 │           14:32              │  ← time (HH:MM)
 │       Mon 27.05.2026         │  ← date
-│ ─────────────────────────── │
-│ T                   23.4 °C  │
-│ H                     52 %   │
-│ P                  1013 hPa  │
+│  ──────────────────────────  │
+│  T                 23.4 °C   │
+│  H                   52 %    │
+│  P               1013 hPa    │
 └──────────────────────────────┘
 ```
 
