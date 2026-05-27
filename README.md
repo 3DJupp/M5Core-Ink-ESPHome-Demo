@@ -6,6 +6,7 @@ temperature, humidity, barometric pressure and IAQ from a **BME688** sensor
 attached via the Grove Port-A connector and publishes everything to
 **Home Assistant**.
 
+<img src="UI.jpg" alt="UI on M5Core-Ink running ESPHome" width="400">
 ---
 
 ## Hardware
