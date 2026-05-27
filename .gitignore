@@ -1,0 +1,19 @@
+# ESPHome build artefacts
+.esphome/
+build/
+
+# Secrets — never commit
+secrets.yaml
+
+# Font files (proprietary — see fonts/README.md)
+fonts/*.ttf
+fonts/*.otf
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS artefacts
+.DS_Store
+Thumbs.db
